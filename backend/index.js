@@ -20,6 +20,15 @@ setInterval(() => {
         AND expiry_time < datetime('now')
     `);
 }, 60000); // Check every minute
+// Helper to generate unique 8-digit alphanumeric code
+function generatePassCode() {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Avoid ambiguous chars like O, 0, I, 1
+    let result = '';
+    for (let i = 0; i < 8; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+}
 
 // API Routes
 
@@ -42,7 +51,7 @@ app.get('/api/residents', (req, res) => {
 });
 
 app.get('/api/residents/:id/passes', (req, res) => {
-    db.all("SELECT * FROM visitor_passes WHERE resident_id = ? ORDER BY issue_time DESC", [req.params.id], (err, rows) => {
+    db.all("SELECT id, pass_code, resident_id, visitor_name, vehicle_number, issue_time, expiry_time, status, entry_time, exit_time FROM visitor_passes WHERE resident_id = ? ORDER BY issue_time DESC", [req.params.id], (err, rows) => {
         if (err) return res.status(500).json({ error: err.message });
         res.json(rows);
     });
@@ -59,10 +68,11 @@ app.post('/api/passes', (req, res) => {
 
     // Insert pass
     const expiryTimestamp = new Date(Date.now() + duration_hours * 3600000).toISOString();
+    const passCode = generatePassCode();
 
     db.run(
-        `INSERT INTO visitor_passes (resident_id, visitor_name, vehicle_number, expiry_time, status) VALUES (?, ?, ?, ?, 'PENDING')`,
-        [resident_id, visitor_name, vehicle_number, expiryTimestamp],
+        `INSERT INTO visitor_passes (resident_id, visitor_name, vehicle_number, expiry_time, status, pass_code) VALUES (?, ?, ?, ?, 'PENDING', ?)`,
+        [resident_id, visitor_name, vehicle_number, expiryTimestamp, passCode],
         function (err) {
             if (err) return res.status(500).json({ error: err.message });
 

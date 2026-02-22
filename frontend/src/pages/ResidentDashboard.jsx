@@ -8,6 +8,8 @@ export default function ResidentDashboard() {
   const [user, setUser] = useState(null);
   const [passes, setPasses] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [newPassCode, setNewPassCode] = useState('');
   const navigate = useNavigate();
 
   // Form State
@@ -45,7 +47,7 @@ export default function ResidentDashboard() {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await api.post('/passes', {
+      const res = await api.post('/passes', {
         resident_id: user.id,
         visitor_name: visitorName,
         phone,
@@ -56,6 +58,10 @@ export default function ResidentDashboard() {
       setPhone('');
       setVehicleNumber('');
       setDuration('4');
+      if (res.data && res.data.pass_code) {
+        setNewPassCode(res.data.pass_code);
+        setShowSuccessModal(true);
+      }
       fetchPasses();
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to create pass');
@@ -225,7 +231,7 @@ export default function ResidentDashboard() {
                           {isExpired && pass.status === 'PENDING' ? 'EXPIRED' : pass.status}
                         </span>
                         <div className="text-xs font-bold text-slate-400 opactity-70">
-                          ID: #{String(pass.id).padStart(4, '0')}
+                          ID: #{pass.pass_code}
                         </div>
                       </div>
                     </div>
@@ -267,6 +273,32 @@ export default function ResidentDashboard() {
         </div>
 
       </div>
+      {/* Success Modal */}
+      {showSuccessModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl transform animate-in zoom-in-95 duration-300 border border-slate-100">
+            <div className="flex flex-col items-center text-center">
+              <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mb-6">
+                <PlusCircle className="w-8 h-8 text-emerald-600" />
+              </div>
+              <h3 className="text-2xl font-extrabold text-slate-800 mb-2">Pass Generated!</h3>
+              <p className="text-slate-500 font-medium mb-6">Your visitor pass has been created successfully. Share this code with your visitor.</p>
+
+              <div className="bg-slate-50 w-full p-6 rounded-2xl border-2 border-dashed border-slate-200 mb-8">
+                <span className="text-xs font-black text-slate-400 uppercase tracking-widest block mb-2">Visitor Access Code</span>
+                <span className="text-4xl font-black text-indigo-600 tracking-wider font-mono">{newPassCode}</span>
+              </div>
+
+              <button
+                onClick={() => setShowSuccessModal(false)}
+                className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-4 rounded-xl transition-all shadow-lg hover:shadow-xl active:scale-95"
+              >
+                Got it
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
