@@ -32,7 +32,11 @@ const Dashboard = () => {
         setError('');
         setValidationResult(null);
         try {
-            const response = await axios.post('/api/validate-pass', { passId });
+            // Send as passCode if it's not a number, otherwise as passId
+            const payload = isNaN(passId) 
+                ? { passCode: passId }
+                : { passId: parseInt(passId) };
+            const response = await axios.post('/api/validate-pass', payload);
             setValidationResult(response.data);
         } catch (err) {
             setError(err.response?.data?.message || 'Verification failed');
