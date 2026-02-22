@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary-50: #eff6ff;
+  --color-primary-100: #dbeafe;
+  --color-primary-500: #3b82f6;
+  --color-primary-600: #2563eb;
+  --color-primary-700: #1d4ed8;
+
+  --color-background-start: #e0e7ff;
+  --color-background-end: #f8fafc;
+  --color-surface-white: rgba(255, 255, 255, 0.75);
+  --color-border-subtle: rgba(255, 255, 255, 0.5);
+
+  --color-text-main: #0f172a;
+  --color-text-muted: #64748b;
+
+  --font-family-sans: 'Outfit', system-ui, sans-serif;
+
+  --animate-blob: blob 7s infinite;
+}
+
+@layer base {
+  body {
+    background: linear-gradient(135deg, var(--color-background-start) 0%, var(--color-background-end) 100%);
+    background-attachment: fixed;
+    color: var(--color-text-main);
+    font-family: var(--font-family-sans);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+}
+
+/* Custom Utilities for smooth UI */
+@layer utilities {
+  .glass-panel {
+    background: rgba(255, 255, 255, 0.6);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.05);
+  }
+
+  .glass-card {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.4));
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+  }
+
+  .animation-delay-2000 {
+    animation-delay: 2s;
+  }
+
+  .animation-delay-4000 {
+    animation-delay: 4s;
+  }
+}
+
+@keyframes blob {
+  0% {
+    transform: translate(0px, 0px) scale(1);
+  }
+
+  33% {
+    transform: translate(30px, -50px) scale(1.1);
+  }
+
+  66% {
+    transform: translate(-20px, 20px) scale(0.9);
+  }
+
+  100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+}
