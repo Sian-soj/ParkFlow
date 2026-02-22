@@ -1,9 +1,12 @@
 const express = require('express');
 const cors = require('cors');
-const db = require('./db');
+const dotenv = require('dotenv');
+const supabase = require('./db');
+
+dotenv.config();
 
 const app = express();
-const PORT = 5005; // Unified port
+const PORT = process.env.PORT || 5005;
 
 app.use(cors());
 app.use(express.json());
@@ -19,21 +22,36 @@ function generatePassCode() {
 }
 
 // Background Task: Auto-expiry logic
-const checkExpiries = () => {
+const checkExpiries = async () => {
     const now = new Date().toISOString();
 
     // 1. Mark PENDING as EXPIRED
-    db.run(`UPDATE visitor_passes SET status = 'EXPIRED' 
-            WHERE status = 'PENDING' AND expiry_time < ?`, [now]);
+    await supabase
+        .from('visitor_passes')
+        .update({ status: 'EXPIRED' })
+        .eq('status', 'PENDING')
+        .lt('expiry_time', now);
 
     // 2. Clear slots for ACTIVE passes that expired
-    db.all(`SELECT id FROM visitor_passes WHERE status = 'ACTIVE' AND expiry_time < ?`, [now], (err, rows) => {
-        if (rows && rows.length > 0) {
-            const expiredIds = rows.map(r => r.id);
-            db.run(`UPDATE visitor_passes SET status = 'EXPIRED' WHERE id IN (${expiredIds.join(',')})`);
-            db.run(`UPDATE parking_slots SET status = 'AVAILABLE', linked_pass_id = NULL WHERE linked_pass_id IN (${expiredIds.join(',')})`);
-        }
-    });
+    const { data: expiredPasses } = await supabase
+        .from('visitor_passes')
+        .select('id')
+        .eq('status', 'ACTIVE')
+        .lt('expiry_time', now);
+
+    if (expiredPasses && expiredPasses.length > 0) {
+        const expiredIds = expiredPasses.map(p => p.id);
+        
+        await supabase
+            .from('visitor_passes')
+            .update({ status: 'EXPIRED' })
+            .in('id', expiredIds);
+
+        await supabase
+            .from('parking_slots')
+            .update({ status: 'AVAILABLE', linked_pass_id: null })
+            .in('linked_pass_id', expiredIds);
+    }
 };
 
 setInterval(checkExpiries, 60000); // Check every minute
@@ -43,46 +61,87 @@ setInterval(checkExpiries, 60000); // Check every minute
 // ==========================================
 
 // Resident Login
-app.post('/api/auth/resident/login', (req, res) => {
-    const { email, password } = req.body;
-    db.get('SELECT id, name, email, flat_number FROM residents WHERE email = ? AND password = ?', [email, password], (err, row) => {
-        if (!row) return res.status(401).json({ error: 'Invalid credentials' });
-        res.json({ user: row });
-    });
+app.post('/api/auth/resident/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        const { data, error } = await supabase
+            .from('residents')
+            .select('id, name, email, flat_number')
+            .eq('email', email)
+            .eq('password', password)
+            .single();
+
+        if (error || !data) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+        res.json({ user: data });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Resident View Own Passes
-app.get('/api/residents/:id/passes', (req, res) => {
-    db.all("SELECT * FROM visitor_passes WHERE resident_id = ? ORDER BY issue_time DESC", [req.params.id], (err, rows) => {
-        res.json(rows);
-    });
+app.get('/api/residents/:id/passes', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('visitor_passes')
+            .select('*')
+            .eq('resident_id', req.params.id)
+            .order('issue_time', { ascending: false });
+
+        if (error) throw error;
+        res.json(data);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Resident Create Pass
-app.post('/api/passes', (req, res) => {
-    const { resident_id, visitor_name, vehicle_number, duration_hours } = req.body;
-    const expiryTimestamp = new Date(Date.now() + duration_hours * 3600000).toISOString();
-    const passCode = generatePassCode();
+app.post('/api/passes', async (req, res) => {
+    try {
+        const { resident_id, visitor_name, vehicle_number, duration_hours } = req.body;
+        const expiryTime = new Date(Date.now() + duration_hours * 3600000).toISOString();
+        const passCode = generatePassCode();
 
-    db.run(
-        `INSERT INTO visitor_passes (resident_id, visitor_name, vehicle_number, expiry_time, status, pass_code) VALUES (?, ?, ?, ?, 'PENDING', ?)`,
-        [resident_id, visitor_name, vehicle_number, expiryTimestamp, passCode],
-        function (err) {
-            if (err) return res.status(500).json({ error: err.message });
-            db.get("SELECT * FROM visitor_passes WHERE id = ?", [this.lastID], (err, row) => {
-                res.status(201).json(row);
-            });
-        }
-    );
+        const { data, error } = await supabase
+            .from('visitor_passes')
+            .insert([
+                {
+                    resident_id,
+                    visitor_name,
+                    vehicle_number,
+                    expiry_time: expiryTime,
+                    status: 'PENDING',
+                    pass_code: passCode
+                }
+            ])
+            .select();
+
+        if (error) throw error;
+        res.status(201).json(data[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Resident Cancel Pass
-app.patch('/api/passes/:id/cancel', (req, res) => {
-    db.run(`UPDATE visitor_passes SET status = 'COMPLETED' WHERE id = ? AND status = 'PENDING'`, [req.params.id], function (err) {
-        if (err) return res.status(500).json({ error: err.message });
-        if (this.changes === 0) return res.status(400).json({ error: 'Pass not found or not in PENDING status' });
+app.patch('/api/passes/:id/cancel', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('visitor_passes')
+            .update({ status: 'COMPLETED' })
+            .eq('id', req.params.id)
+            .eq('status', 'PENDING')
+            .select();
+
+        if (error) throw error;
+        if (!data || data.length === 0) {
+            return res.status(400).json({ error: 'Pass not found or not in PENDING status' });
+        }
         res.json({ message: 'Pass cancelled' });
-    });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // ==========================================
@@ -100,114 +159,284 @@ app.post('/api/login', (req, res) => {
 });
 
 // Guard Dashboard Stats
-app.get('/api/dashboard', (req, res) => {
-    db.get(`SELECT 
-        (SELECT COUNT(*) FROM parking_slots) as total,
-        (SELECT COUNT(*) FROM parking_slots WHERE status = 'AVAILABLE') as available,
-        (SELECT COUNT(*) FROM parking_slots WHERE status = 'OCCUPIED') as occupied`,
-        (err, slots) => {
-            db.all(`SELECT vp.*, ps.id as slot_id 
-                FROM visitor_passes vp 
-                JOIN parking_slots ps ON vp.id = ps.linked_pass_id 
-                WHERE vp.status = 'ACTIVE'`, (err, parked) => {
-                res.json({ slots, parked });
-            });
+app.get('/api/dashboard', async (req, res) => {
+    try {
+        // Get slot stats
+        const { data: allSlots } = await supabase
+            .from('parking_slots')
+            .select('status');
+
+        const total = allSlots?.length || 0;
+        const available = allSlots?.filter(s => s.status === 'AVAILABLE').length || 0;
+        const occupied = allSlots?.filter(s => s.status === 'OCCUPIED').length || 0;
+
+        // Get parked vehicles
+        const { data: parked } = await supabase
+            .from('visitor_passes')
+            .select(`
+                *,
+                parking_slots!linked_pass_id(id)
+            `)
+            .eq('status', 'ACTIVE');
+
+        const parkedWithSlots = parked?.map(p => ({
+            ...p,
+            slot_id: p.parking_slots?.[0]?.id
+        })) || [];
+
+        res.json({ 
+            slots: { total, available, occupied }, 
+            parked: parkedWithSlots 
         });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Validate Pass (By ID or Code)
-app.post('/api/validate-pass', (req, res) => {
-    const { passId, passCode } = req.body;
-    const value = passId || passCode;
+app.post('/api/validate-pass', async (req, res) => {
+    try {
+        const { passId, passCode } = req.body;
 
-    if (!value) return res.status(400).json({ message: 'Pass ID or Code is required' });
+        if (!passId && !passCode) return res.status(400).json({ message: 'Pass ID or Code is required' });
 
-    let query = `
-        SELECT vp.*, r.name as resident_name, r.flat_number 
-        FROM visitor_passes vp 
-        JOIN residents r ON vp.resident_id = r.id 
-        WHERE vp.id = ? OR vp.pass_code = ?
-    `;
+        let query = supabase
+            .from('visitor_passes')
+            .select(`
+                *,
+                residents!inner(name, flat_number)
+            `);
 
-    db.get(query, [value, value], (err, pass) => {
-        if (err) return res.status(500).json({ error: err.message });
-        if (!pass) return res.status(404).json({ message: 'Pass not found' });
+        // Search by ID first, then by code
+        if (passId) {
+            query = query.eq('id', passId);
+        } else if (passCode) {
+            query = query.eq('pass_code', passCode);
+        }
+
+        const { data: passes, error } = await query;
+
+        if (error || !passes || passes.length === 0) {
+            return res.status(404).json({ message: 'Pass not found' });
+        }
+
+        const pass = passes[0];
 
         // Auto-expire check
         if (pass.status === 'PENDING' && new Date(pass.expiry_time) < new Date()) {
-            db.run(`UPDATE visitor_passes SET status = 'EXPIRED' WHERE id = ?`, [pass.id]);
-            pass.status = 'EXPIRED';
-            return res.status(400).json({ message: 'Pass has expired', pass });
+            await supabase
+                .from('visitor_passes')
+                .update({ status: 'EXPIRED' })
+                .eq('id', pass.id);
+            
+            return res.status(400).json({ 
+                message: 'Pass has expired', 
+                pass: {
+                    ...pass,
+                    resident_name: pass.residents?.name,
+                    flat_number: pass.residents?.flat_number
+                }
+            });
         }
-        res.json(pass);
-    });
+
+        res.json({
+            ...pass,
+            resident_name: pass.residents?.name,
+            flat_number: pass.residents?.flat_number
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Allow Entry
-app.post('/api/allow-entry/:id', (req, res) => {
-    const passId = req.params.id;
-    db.get(`SELECT id FROM parking_slots WHERE status = 'AVAILABLE' LIMIT 1`, (err, slot) => {
-        if (!slot) return res.status(400).json({ message: 'No slots available' });
-        db.run(`UPDATE visitor_passes SET status = 'ACTIVE', entry_time = datetime('now') WHERE id = ?`, [passId], () => {
-            db.run(`UPDATE parking_slots SET status = 'OCCUPIED', linked_pass_id = ? WHERE id = ?`, [passId, slot.id], () => {
-                res.json({ success: true, slot_id: slot.id });
-            });
-        });
-    });
+app.post('/api/allow-entry/:id', async (req, res) => {
+    try {
+        const passId = req.params.id;
+
+        // Get available slot
+        const { data: slots, error: slotError } = await supabase
+            .from('parking_slots')
+            .select('id')
+            .eq('status', 'AVAILABLE')
+            .limit(1);
+
+        if (slotError || !slots || slots.length === 0) {
+            return res.status(400).json({ message: 'No slots available' });
+        }
+
+        const slotId = slots[0].id;
+
+        // Update pass
+        await supabase
+            .from('visitor_passes')
+            .update({ 
+                status: 'ACTIVE', 
+                entry_time: new Date().toISOString() 
+            })
+            .eq('id', passId);
+
+        // Update slot
+        await supabase
+            .from('parking_slots')
+            .update({ 
+                status: 'OCCUPIED', 
+                linked_pass_id: passId 
+            })
+            .eq('id', slotId);
+
+        res.json({ success: true, slot_id: slotId });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Mark Exit
-app.post('/api/mark-exit/:id', (req, res) => {
-    db.run(`UPDATE visitor_passes SET status = 'COMPLETED', exit_time = datetime('now') WHERE id = ?`, [req.params.id], () => {
-        db.run(`UPDATE parking_slots SET status = 'AVAILABLE', linked_pass_id = NULL WHERE linked_pass_id = ?`, [req.params.id], () => {
-            res.json({ success: true });
-        });
-    });
+app.post('/api/mark-exit/:id', async (req, res) => {
+    try {
+        const passId = req.params.id;
+
+        // Update pass
+        await supabase
+            .from('visitor_passes')
+            .update({ 
+                status: 'COMPLETED', 
+                exit_time: new Date().toISOString() 
+            })
+            .eq('id', passId);
+
+        // Free slot
+        await supabase
+            .from('parking_slots')
+            .update({ 
+                status: 'AVAILABLE', 
+                linked_pass_id: null 
+            })
+            .eq('linked_pass_id', passId);
+
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // Search Activity
-app.get('/api/search', (req, res) => {
-    const { vehicle } = req.query;
-    db.get(`SELECT vp.*, ps.id as slot_id FROM visitor_passes vp JOIN parking_slots ps ON vp.id = ps.linked_pass_id WHERE vp.status = 'ACTIVE' AND vp.vehicle_number LIKE ?`, [`%${vehicle}%`], (err, row) => {
-        res.json(row || null);
-    });
+app.get('/api/search', async (req, res) => {
+    try {
+        const { vehicle } = req.query;
+        const { data, error } = await supabase
+            .from('visitor_passes')
+            .select(`
+                *,
+                parking_slots!linked_pass_id(id)
+            `)
+            .eq('status', 'ACTIVE')
+            .ilike('vehicle_number', `%${vehicle}%`);
+
+        if (error) throw error;
+
+        const result = data?.[0] ? {
+            ...data[0],
+            slot_id: data[0].parking_slots?.[0]?.id
+        } : null;
+
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 // View All Passes
-app.get('/api/passes', (req, res) => {
-    const { status } = req.query;
-    let query = `SELECT vp.*, r.name as resident_name, r.flat_number FROM visitor_passes vp JOIN residents r ON vp.resident_id = r.id`;
-    let params = [];
-    if (status) {
-        query += ` WHERE vp.status = ?`;
-        params.push(status);
+app.get('/api/passes', async (req, res) => {
+    try {
+        const { status } = req.query;
+        
+        let query = supabase
+            .from('visitor_passes')
+            .select(`
+                *,
+                residents!inner(name, flat_number)
+            `)
+            .order('issue_time', { ascending: false });
+
+        if (status) {
+            query = query.eq('status', status);
+        }
+
+        const { data, error } = await query;
+
+        if (error) throw error;
+
+        // Flatten resident info
+        const response = data.map(pass => ({
+            ...pass,
+            resident_name: pass.residents?.name,
+            flat_number: pass.residents?.flat_number
+        }));
+
+        res.json(response);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
-    query += ` ORDER BY vp.issue_time DESC`;
-    db.all(query, params, (err, rows) => {
-        res.json(rows);
-    });
 });
 
 // Settings
-app.get('/api/settings', (req, res) => {
-    db.get(`SELECT * FROM app_config LIMIT 1`, (err, row) => {
-        res.json(row);
-    });
+app.get('/api/settings', async (req, res) => {
+    try {
+        const { data, error } = await supabase
+            .from('app_config')
+            .select('*')
+            .limit(1)
+            .single();
+
+        if (error) throw error;
+        res.json(data);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-app.put('/api/settings', (req, res) => {
-    const { max_duration_hours, max_active_slots } = req.body;
-    db.run(`UPDATE app_config SET max_duration_hours = ?, max_active_slots = ?`, [max_duration_hours, max_active_slots], () => {
-        db.get(`SELECT COUNT(*) as count FROM parking_slots`, (err, row) => {
-            if (max_active_slots > row.count) {
-                const diff = max_active_slots - row.count;
-                const stmt = db.prepare("INSERT INTO parking_slots (status) VALUES ('AVAILABLE')");
-                for (let i = 0; i < diff; i++) stmt.run();
-                stmt.finalize();
+app.put('/api/settings', async (req, res) => {
+    try {
+        const { max_duration_hours, max_active_slots } = req.body;
+
+        // Update settings
+        await supabase
+            .from('app_config')
+            .update({ max_duration_hours, max_active_slots })
+            .eq('id', 1);
+
+        // Get current slots count
+        const { data: slots, error: slotsError } = await supabase
+            .from('parking_slots')
+            .select('*');
+
+        if (slotsError) throw slotsError;
+
+        const currentCount = slots?.length || 0;
+
+        if (max_active_slots > currentCount) {
+            const diff = max_active_slots - currentCount;
+            const newSlots = Array(diff).fill({ status: 'AVAILABLE' });
+            await supabase.from('parking_slots').insert(newSlots);
+        } else if (max_active_slots < currentCount) {
+            // Delete available slots
+            const { data: availableSlots } = await supabase
+                .from('parking_slots')
+                .select('id')
+                .eq('status', 'AVAILABLE')
+                .limit(currentCount - max_active_slots);
+
+            if (availableSlots && availableSlots.length > 0) {
+                const idsToDelete = availableSlots.map(s => s.id);
+                await supabase.from('parking_slots').delete().in('id', idsToDelete);
             }
-            res.json({ success: true });
-        });
-    });
+        }
+
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.listen(PORT, () => {
