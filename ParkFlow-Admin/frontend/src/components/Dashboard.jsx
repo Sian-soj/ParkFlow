@@ -82,16 +82,9 @@ const Dashboard = () => {
             const pass = passes[0];
             const now = new Date();
 
-            if (pass.status === 'PENDING' && new Date(pass.expiry_time) < now) {
-                await supabase
-                    .from('visitor_passes')
-                    .update({ status: 'EXPIRED' })
-                    .eq('id', pass.id);
-                setError('Pass has expired');
-                return;
-            }
+            // Removed auto-expiry check as requested
 
-            if (pass.status !== 'PENDING') {
+            if (pass.status !== 'PENDING' && pass.status !== 'EXPIRED') {
                 setError(`Pass is already ${pass.status}`);
                 return;
             }

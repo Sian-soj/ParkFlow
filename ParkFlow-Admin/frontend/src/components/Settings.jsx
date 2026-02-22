@@ -104,7 +104,7 @@ const Settings = () => {
                             min="1"
                             max="24"
                         />
-                        <p className="text-xs text-slate-400 mt-1.5 italic">Passes will expire automatically after this time</p>
+                        <p className="text-xs text-slate-400 mt-1.5 italic">Maximum duration for visitor stays (for record-keeping)</p>
                     </div>
 
                     <div>
