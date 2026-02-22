@@ -24,6 +24,7 @@ function initDb() {
 
         db.run(`CREATE TABLE IF NOT EXISTS visitor_passes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            pass_code TEXT UNIQUE,
             resident_id INTEGER NOT NULL,
             visitor_name TEXT NOT NULL,
             vehicle_number TEXT NOT NULL,
