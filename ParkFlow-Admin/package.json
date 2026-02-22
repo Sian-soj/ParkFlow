@@ -1,0 +1,11 @@
+{
+    "name": "parkflow-admin",
+    "version": "1.0.0",
+    "description": "Root for ParkFlow Admin/Security Portal",
+    "scripts": {
+        "install:all": "npm install --prefix backend && npm install --prefix frontend",
+        "start:backend": "npm start --prefix backend",
+        "start:frontend": "npm run dev --prefix frontend",
+        "dev": "npm install -g concurrently && concurrently \"npm start --prefix backend\" \"npm run dev --prefix frontend\""
+    }
+}
