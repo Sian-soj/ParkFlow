@@ -21,7 +21,7 @@ npm run install:all
 ```bash
 npm run dev
 ```
-*This starts the Unified Backend (5005), Resident Portal (5176+), and Admin Portal (3001) simultaneously.*
+*This starts the Unified Backend (5005), Resident Portal (5176+), and Admin Portal (3001) simultaneously,,*
 
 ---
 
