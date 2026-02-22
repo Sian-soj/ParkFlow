@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LogIn, Mail, Lock, AlertCircle, Car, ArrowRight } from 'lucide-react';
-import api from '../api';
+import { supabase } from '../supabaseClient';
 
 export default function ResidentLogin() {
     const [email, setEmail] = useState('john@gmail.com');
@@ -16,11 +16,22 @@ export default function ResidentLogin() {
         setError('');
 
         try {
-            const res = await api.post('/auth/resident/login', { email, password });
-            localStorage.setItem('parkflow_user', JSON.stringify(res.data.user));
+            const { data, error: authError } = await supabase
+                .from('residents')
+                .select('id, name, email, flat_number')
+                .eq('email', email)
+                .eq('password', password)
+                .single();
+
+            if (authError || !data) {
+                setError('Invalid credentials');
+                return;
+            }
+
+            localStorage.setItem('parkflow_user', JSON.stringify(data));
             navigate('/resident');
         } catch (err) {
-            setError(err.response?.data?.error || 'Login failed. Please try again.');
+            setError('Login failed. Please try again.');
         } finally {
             setIsLoading(false);
         }

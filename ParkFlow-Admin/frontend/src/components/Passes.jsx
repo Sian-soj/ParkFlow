@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { supabase } from '../supabaseClient';
 import { Filter, Calendar, User, Car } from 'lucide-react';
 
 const Passes = () => {
@@ -10,10 +10,32 @@ const Passes = () => {
     const fetchPasses = async () => {
         setLoading(true);
         try {
-            const response = await axios.get(`/api/passes${statusFilter ? `?status=${statusFilter}` : ''}`);
-            setPasses(response.data);
+            let query = supabase
+                .from('visitor_passes')
+                .select(`
+                    *,
+                    residents!inner(name, flat_number)
+                `)
+                .order('issue_time', { ascending: false });
+
+            if (statusFilter) {
+                query = query.eq('status', statusFilter);
+            }
+
+            const { data, error } = await query;
+
+            if (error) throw error;
+
+            // Flatten resident info to match expected format
+            const flattenedData = data.map(pass => ({
+                ...pass,
+                resident_name: pass.residents?.name,
+                flat_number: pass.residents?.flat_number
+            }));
+
+            setPasses(flattenedData);
         } catch (err) {
-            console.error('Error fetching passes');
+            console.error('Error fetching passes:', err.message);
         } finally {
             setLoading(false);
         }

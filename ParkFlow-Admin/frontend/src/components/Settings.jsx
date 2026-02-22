@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { supabase } from '../supabaseClient';
 import { Save, Settings as SettingsIcon, Clock, Layers, AlertCircle } from 'lucide-react';
 
 const Settings = () => {
@@ -10,10 +10,16 @@ const Settings = () => {
     useEffect(() => {
         const fetchSettings = async () => {
             try {
-                const response = await axios.get('/api/settings');
-                if (response.data) setConfig(response.data);
+                const { data, error } = await supabase
+                    .from('app_config')
+                    .select('*')
+                    .limit(1)
+                    .single();
+
+                if (error) throw error;
+                if (data) setConfig(data);
             } catch (err) {
-                console.error('Error fetching settings');
+                console.error('Error fetching settings:', err.message);
             }
         };
         fetchSettings();
@@ -24,9 +30,47 @@ const Settings = () => {
         setLoading(true);
         setMessage(null);
         try {
-            await axios.put('/api/settings', config);
+            // Update settings
+            const { error: updateError } = await supabase
+                .from('app_config')
+                .update({
+                    max_duration_hours: config.max_duration_hours,
+                    max_active_slots: config.max_active_slots
+                })
+                .eq('id', 1);
+
+            if (updateError) throw updateError;
+
+            // Handle slot adjustments (increasing slots)
+            const { data: slots, error: slotsError } = await supabase
+                .from('parking_slots')
+                .select('id');
+
+            if (slotsError) throw slotsError;
+
+            const currentCount = slots?.length || 0;
+
+            if (config.max_active_slots > currentCount) {
+                const diff = config.max_active_slots - currentCount;
+                const newSlots = Array(diff).fill({ status: 'AVAILABLE' });
+                await supabase.from('parking_slots').insert(newSlots);
+            } else if (config.max_active_slots < currentCount) {
+                // Delete available slots if needed (manual logic as per main_BACKEND)
+                const { data: availableSlots } = await supabase
+                    .from('parking_slots')
+                    .select('id')
+                    .eq('status', 'AVAILABLE')
+                    .limit(currentCount - config.max_active_slots);
+
+                if (availableSlots && availableSlots.length > 0) {
+                    const idsToDelete = availableSlots.map(s => s.id);
+                    await supabase.from('parking_slots').delete().in('id', idsToDelete);
+                }
+            }
+
             setMessage({ type: 'success', text: 'Settings updated successfully!' });
         } catch (err) {
+            console.error('Save failed:', err.message);
             setMessage({ type: 'error', text: 'Failed to update settings' });
         } finally {
             setLoading(false);

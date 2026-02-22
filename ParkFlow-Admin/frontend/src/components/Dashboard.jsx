@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { supabase } from '../supabaseClient';
 import { Search, MapPin, Clock, User, Car, CheckCircle, XCircle, AlertCircle, Info } from 'lucide-react';
 
 const Dashboard = () => {
@@ -13,10 +13,37 @@ const Dashboard = () => {
 
     const fetchData = async () => {
         try {
-            const response = await axios.get('/api/dashboard');
-            setData(response.data);
+            // Get slot stats
+            const { data: allSlots } = await supabase
+                .from('parking_slots')
+                .select('status');
+
+            const total = allSlots?.length || 0;
+            const available = allSlots?.filter(s => s.status === 'AVAILABLE').length || 0;
+            const occupied = allSlots?.filter(s => s.status === 'OCCUPIED').length || 0;
+
+            // Get parked vehicles
+            const { data: parkedData, error: parkedError } = await supabase
+                .from('visitor_passes')
+                .select(`
+                    *,
+                    parking_slots!linked_pass_id(id)
+                `)
+                .eq('status', 'ACTIVE');
+
+            if (parkedError) throw parkedError;
+
+            const parkedWithSlots = parkedData?.map(p => ({
+                ...p,
+                slot_id: p.parking_slots?.[0]?.id
+            })) || [];
+
+            setData({
+                slots: { total, available, occupied },
+                parked: parkedWithSlots
+            });
         } catch (err) {
-            console.error('Error fetching dashboard data');
+            console.error('Error fetching dashboard data:', err.message);
         }
     };
 
@@ -32,14 +59,51 @@ const Dashboard = () => {
         setError('');
         setValidationResult(null);
         try {
-            // Send as passCode if it's not a number, otherwise as passId
-            const payload = isNaN(passId) 
-                ? { passCode: passId }
-                : { passId: parseInt(passId) };
-            const response = await axios.post('/api/validate-pass', payload);
-            setValidationResult(response.data);
+            let query = supabase
+                .from('visitor_passes')
+                .select(`
+                    *,
+                    residents!inner(name, flat_number)
+                `);
+
+            if (isNaN(passId)) {
+                query = query.eq('pass_code', passId);
+            } else {
+                query = query.eq('id', parseInt(passId));
+            }
+
+            const { data: passes, error: validationError } = await query;
+
+            if (validationError || !passes || passes.length === 0) {
+                setError('Pass not found');
+                return;
+            }
+
+            const pass = passes[0];
+            const now = new Date();
+
+            if (pass.status === 'PENDING' && new Date(pass.expiry_time) < now) {
+                await supabase
+                    .from('visitor_passes')
+                    .update({ status: 'EXPIRED' })
+                    .eq('id', pass.id);
+                setError('Pass has expired');
+                return;
+            }
+
+            if (pass.status !== 'PENDING') {
+                setError(`Pass is already ${pass.status}`);
+                return;
+            }
+
+            setValidationResult({
+                ...pass,
+                resident_name: pass.residents?.name,
+                flat_number: pass.residents?.flat_number
+            });
         } catch (err) {
-            setError(err.response?.data?.message || 'Verification failed');
+            setError('Verification failed');
+            console.error(err);
         } finally {
             setLoading(false);
         }
@@ -47,23 +111,73 @@ const Dashboard = () => {
 
     const handleAllowEntry = async (id) => {
         try {
-            await axios.post(`/api/allow-entry/${id}`);
+            // Get available slot
+            const { data: slots, error: slotError } = await supabase
+                .from('parking_slots')
+                .select('id')
+                .eq('status', 'AVAILABLE')
+                .limit(1);
+
+            if (slotError || !slots || slots.length === 0) {
+                alert('No slots available');
+                return;
+            }
+
+            const slotId = slots[0].id;
+
+            // Update pass
+            await supabase
+                .from('visitor_passes')
+                .update({
+                    status: 'ACTIVE',
+                    entry_time: new Date().toISOString()
+                })
+                .eq('id', id);
+
+            // Update slot
+            await supabase
+                .from('parking_slots')
+                .update({
+                    status: 'OCCUPIED',
+                    linked_pass_id: id
+                })
+                .eq('id', slotId);
+
             setValidationResult(null);
             setPassId('');
             fetchData();
             alert('Entry allowed successfully!');
         } catch (err) {
-            alert(err.response?.data?.message || 'Error allowing entry');
+            alert('Error allowing entry');
+            console.error(err);
         }
     };
 
     const handleMarkExit = async (id) => {
         if (!confirm('Are you sure you want to mark this vehicle as exited?')) return;
         try {
-            await axios.post(`/api/mark-exit/${id}`);
+            // Update pass
+            await supabase
+                .from('visitor_passes')
+                .update({
+                    status: 'COMPLETED',
+                    exit_time: new Date().toISOString()
+                })
+                .eq('id', id);
+
+            // Free slot
+            await supabase
+                .from('parking_slots')
+                .update({
+                    status: 'AVAILABLE',
+                    linked_pass_id: null
+                })
+                .eq('linked_pass_id', id);
+
             fetchData();
         } catch (err) {
             alert('Error marking exit');
+            console.error(err);
         }
     };
 
@@ -73,10 +187,27 @@ const Dashboard = () => {
             return;
         }
         try {
-            const response = await axios.get(`/api/search?vehicle=${searchVehicle}`);
-            setSearchResult(response.data);
+            const { data: searchData, error: searchError } = await supabase
+                .from('visitor_passes')
+                .select(`
+                    *,
+                    parking_slots!linked_pass_id(id)
+                `)
+                .eq('status', 'ACTIVE')
+                .ilike('vehicle_number', `%${searchVehicle}%`);
+
+            if (searchError) throw searchError;
+
+            if (searchData && searchData[0]) {
+                setSearchResult({
+                    ...searchData[0],
+                    slot_id: searchData[0].parking_slots?.[0]?.id
+                });
+            } else {
+                setSearchResult(null);
+            }
         } catch (err) {
-            console.error('Search failed');
+            console.error('Search failed:', err.message);
         }
     };
 

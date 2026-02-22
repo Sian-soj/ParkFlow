@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import axios from 'axios';
 import { Lock, User } from 'lucide-react';
 
 const Login = ({ onLogin }) => {
@@ -14,10 +13,14 @@ const Login = ({ onLogin }) => {
         setLoading(true);
 
         try {
-            const response = await axios.post('/api/login', { id, password });
-            onLogin(response.data.user);
+            // Replicating the backend logic: hardcoded admin check
+            if (id === 'admin' && password === 'admin123') {
+                onLogin({ role: 'admin' });
+            } else {
+                setError('Invalid credentials');
+            }
         } catch (err) {
-            setError(err.response?.data?.message || 'Login failed');
+            setError('Login failed');
         } finally {
             setLoading(false);
         }

@@ -3,10 +3,12 @@
     "version": "1.0.0",
     "description": "Unified ParkFlow Management system",
     "scripts": {
-        "install:all": "npm install --prefix main_BACKEND && npm install --prefix frontend && npm install --prefix ParkFlow-Admin/frontend",
-        "start:backend": "npm start --prefix main_BACKEND",
+        "install:all": "npm install --prefix frontend && npm install --prefix ParkFlow-Admin/frontend",
         "start:resident": "npm run dev --prefix frontend",
         "start:admin": "npm run dev --prefix ParkFlow-Admin/frontend",
-        "dev": "npm install -g concurrently && concurrently \"npm start --prefix main_BACKEND\" \"npm run dev --prefix frontend\" \"npm run dev --prefix ParkFlow-Admin/frontend\""
+        "dev": "concurrently \"npm run dev --prefix frontend\" \"npm run dev --prefix ParkFlow-Admin/frontend\""
+    },
+    "devDependencies": {
+        "concurrently": "^9.2.1"
     }
 }

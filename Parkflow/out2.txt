@@ -1,7 +1,0 @@
-Spot 1 (x=0, y=60, w=87, h=160): 916 pixels
-Spot 2 (x=87, y=60, w=87, h=160): 36 pixels
-Spot 3 (x=174, y=60, w=87, h=160): 1804 pixels
-Spot 4 (x=261, y=60, w=87, h=160): 245 pixels
-Spot 5 (x=348, y=60, w=87, h=160): 831 pixels
-Spot 6 (x=435, y=60, w=87, h=160): 3301 pixels
-Spot 7 (x=522, y=60, w=87, h=160): 2852 pixels
