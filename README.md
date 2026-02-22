@@ -31,4 +31,4 @@ npm run dev
 - **Resident (Demo)**: `arun@parkflow.com` / `password123`
 
 ---
-*Created with 💙 by ParkFlow Systems*
+*Created with 💙 by INNOHACK TEAM*
