@@ -1,0 +1,55 @@
+# Node modules (all folders)
+**/node_modules/
+
+# Environment files (do not commit secrets)
+.env
+.env.local
+.env.*.local
+**/.env
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs
+dist/
+build/
+out/
+.parcel-cache/
+.cache/
+
+# Vite / frameworks
+.vite/
+.vitepress/
+
+# Next/ Nuxt / Svelte / Vercel / Netlify
+.next/
+.nuxt/
+.vercel/
+# Netlify cache
+.netlify/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+
+# Databases and local storage
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# Coverage and temp
+coverage/
+.nyc_output/
+*.tgz
+
+# Misc
+dist-*/
+*.log
