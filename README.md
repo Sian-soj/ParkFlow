@@ -76,7 +76,7 @@ npm run dev
 | Role | Username / Email | Password |
 | :--- | :--- | :--- |
 | **Admin** | `admin` | `admin123` |
-| **Resident** | `arun@parkflow.com` | `password123` |
+| **Resident** | `john@gmail.com` | `password123` |
 
 ---
 
