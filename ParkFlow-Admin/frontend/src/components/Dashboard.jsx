@@ -131,12 +131,12 @@ const Dashboard = () => {
                         </h2>
                         <div className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-slate-600 mb-2">Pass ID</label>
+                                <label className="block text-sm font-medium text-slate-600 mb-2">Pass ID or Code</label>
                                 <div className="flex gap-2">
                                     <input
                                         type="text"
                                         className="input-field"
-                                        placeholder="Enter Pass ID"
+                                        placeholder="Enter ID or 8-digit Code"
                                         value={passId}
                                         onChange={(e) => setPassId(e.target.value)}
                                         onKeyDown={(e) => e.key === 'Enter' && handleValidate()}
